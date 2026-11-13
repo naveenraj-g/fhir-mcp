@@ -1,0 +1,62 @@
+# Application-behavior config for fhir-mcp. Checked into git — not a secret.
+# Secrets and per-environment values (connector client secrets, a discovery
+# token) live in .env or real env vars. Each connector's own settings live in
+# configs/connectors/<name>.yaml. Precedence, highest first:
+#   real env var > .env > these YAML files > field defaults
+# — see app/core/config.py. Any nested key can be overridden with `__`, e.g.
+#   CONNECTORS__ACTIVE=medplum  CONNECTORS__INTERNAL__PLUGIN=graphql
+
+app:
+  name: "FHIR MCP"
+  version: "0.1.0"
+  instructions: >-
+    Tools for reading and writing FHIR R4 resources (currently Organization
+    and Location). Resource bodies are FHIR R4 JSON (camelCase, nested
+    datatypes). Search tools take FHIR R4 search parameters; a modifier is
+    written with a double underscore in the argument name (name__exact for
+    `name:exact`, partof__missing for `partof:missing`).
+
+server:
+  # http = Streamable HTTP (remote clients; carries the caller's bearer token).
+  # stdio = local desktop clients (no caller token — token_passthrough
+  # connectors can't authenticate over it).
+  transport: http
+  host: 127.0.0.1
+  port: 8010
+  path: /mcp
+
+auth:
+  # Verify the caller's bearer JWT against the IAM — the same BetterAuth
+  # instance fhir-server and fhir-gql trust. With this off, a token the
+  # client sends is still forwarded by token_passthrough connectors (the
+  # backend then verifies it), but this server accepts unauthenticated MCP
+  # sessions — local development only.
+  enabled: true
+  algorithm: EdDSA
+  # Override per environment with AUTH__JWKS_URL / AUTH__ISSUER.
+  jwks_url: http://localhost:5001/api/auth/jwks
+  issuer: http://localhost:5001
+  # null = same as issuer (the IAM sets aud == iss).
+  audience: null
+
+connectors:
+  # Which backend the tools talk to:
+  #   universal  fhir-gql, our universal gateway — it reaches whichever
+  #              EMR/EHR its own connectors.active names (internal, medplum, ...)
+  #   internal   fhir-server directly (or fhir-gql, with plugin: graphql)
+  #   medplum    Medplum directly
+  # The plugin (rest | graphql) is chosen per connector in
+  # configs/connectors/<name>.yaml.
+  active: universal
+
+logging:
+  level: INFO
+  # json | console
+  format: console
+  # ⚠️ PHI — local development only. Logs tool-call arguments at DEBUG.
+  debug_payloads: false
+  redact:
+    - authorization
+    - token
+    - password
+    - secret

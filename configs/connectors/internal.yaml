@@ -1,0 +1,50 @@
+# The internal connector — our own stack. Two plugins can generate its tools:
+#
+#   rest     fhir-server's own REST API, from its /openapi.json (public).
+#            One tool per included operation, named by operationId
+#            (create_organization, search_organizations, ...).
+#   graphql  fhir-gql's GraphQL API, by introspection. One tool per included
+#            Query/Mutation field (get_fhir_organization, ...).
+#
+# Both backends verify JWTs against the same IAM this server does, so the
+# caller's own token is forwarded (token_passthrough) — no credentials of
+# our own. fhir-gql's /graphql requires a token even for introspection, so
+# the graphql plugin needs either CONNECTORS__INTERNAL__DISCOVERY_TOKEN (a
+# valid JWT, used once at startup) or graphql.schema_file.
+#
+# Switch plugins with CONNECTORS__INTERNAL__PLUGIN=graphql, or edit below.
+connectors:
+  internal:
+    plugin: rest
+    auth_mode: token_passthrough
+    timeout_seconds: 30
+
+    rest:
+      base_url: http://localhost:8001
+      openapi_url: http://localhost:8001/openapi.json
+      # Organization and Location only, for now. Each rule is a FastMCP
+      # RouteMap: methods / pattern (regex on the spec path) / tags.
+      include:
+        - pattern: ^/api/fhir/v1/organizations/
+        - pattern: ^/api/fhir/v1/locations/
+      exclude:
+        # POST /_search is the form-encoded twin of GET search — same
+        # parameters, one tool is enough.
+        - pattern: /_search$
+
+    graphql:
+      endpoint: http://localhost:8005/graphql
+      # native = our generator (app/plugins/graphql); graphql_mcp = the
+      # graphql-mcp library (app/plugins/graphql_mcp) — results only 2 levels deep.
+      engine: native
+      schema_file: null
+      # Regexes on the root field name.
+      include:
+        - Organization
+        - Location
+      exclude:
+        # Legacy list variants — searchFhir* returns the same data plus
+        # total and paging.
+        - ^getFhir(Organizations|Locations)$
+      include_mutations: true
+      selection_depth: 5

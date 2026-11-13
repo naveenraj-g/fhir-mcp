@@ -1,0 +1,56 @@
+# The medplum connector — a genuinely FHIR-R4-compliant external backend.
+#
+# Medplum has its own OAuth2 server and has never heard of our IAM, so this
+# server authenticates as itself (oauth_client_credentials) with its own
+# Medplum ClientApplication — never as the MCP caller. The caller's token is
+# still verified on the way in (auth.enabled), it just isn't forwarded.
+#
+# client_id / client_secret are secrets — set CONNECTORS__MEDPLUM__CLIENT_ID
+# and CONNECTORS__MEDPLUM__CLIENT_SECRET (e.g. in .env), never here.
+#
+# Plugins:
+#   rest     Medplum's /openapi.json, filtered to the resource types below.
+#   graphql  Medplum's FHIR GraphQL endpoint ($graphql), by introspection
+#            (authenticated with the same client credentials).
+connectors:
+  medplum:
+    plugin: rest
+    auth_mode: oauth_client_credentials
+    token_url: http://localhost:8103/oauth2/token
+    timeout_seconds: 30
+
+    rest:
+      base_url: http://localhost:8103
+      openapi_url: http://localhost:8103/openapi.json
+      # Medplum's spec is generic (/fhir/R4/{resourceType}/...); expand it
+      # into concrete Organization and Location operations
+      # (read_organization, search_location, ...) — see
+      # app/plugins/rest/expand.py. The include rules below then match the
+      # expanded paths.
+      resource_types: [Organization, Location]
+      include:
+        - pattern: ^/fhir/R4/Organization(/|$)
+        - pattern: ^/fhir/R4/Location(/|$)
+      exclude:
+        # Version history, $validate and conditional update (PUT on the
+        # collection) aren't needed as tools yet.
+        - pattern: /_history
+        - pattern: /\$validate$
+        - pattern: ^/fhir/R4/[A-Za-z]+$
+          methods: [PUT]
+      validate_output: false
+
+    graphql:
+      endpoint: http://localhost:8103/fhir/R4/$graphql
+      # native = our generator (app/plugins/graphql); graphql_mcp = the
+      # graphql-mcp library (app/plugins/graphql_mcp) — results only 2 levels deep.
+      engine: native
+      schema_file: null
+      # Medplum's root fields per type: X (read), XList (search),
+      # XConnection (paged search), XCreate/XUpdate/XPatch/XDelete.
+      # Anchored so OrganizationAffiliation doesn't match.
+      include:
+        - ^(Organization|Location)(List|Create|Update|Patch|Delete)?$
+      exclude: []
+      include_mutations: true
+      selection_depth: 4

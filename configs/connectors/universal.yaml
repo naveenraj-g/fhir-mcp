@@ -1,0 +1,41 @@
+# The universal connector — fhir-gql, our universal FHIR gateway.
+#
+#   fhir-mcp ──► fhir-gql ──► internal (fhir-server) | medplum | ...
+#
+# fhir-gql exposes one GraphQL API and translates it to whichever EMR/EHR its
+# own `connectors.active` names, so the tools here don't change when the EMR
+# behind it does: switch EMRs in fhir-gql, not here. This is the intended
+# production path; the internal and medplum connectors talk to a backend
+# directly and remain available for anything fhir-gql doesn't front.
+#
+# fhir-gql verifies the caller's JWT against the same IAM this server does
+# and holds its own EMR credentials, so this connector only forwards the
+# caller's token (token_passthrough). fhir-gql's /graphql requires a token
+# even for introspection: set CONNECTORS__UNIVERSAL__DISCOVERY_TOKEN (a valid
+# JWT, used once at startup) or graphql.schema_file.
+#
+# Only the graphql plugin applies today. If fhir-gql grows a REST API with
+# an OpenAPI spec, add a `rest:` block here (as in internal.yaml) and set
+# `plugin: rest` — nothing else changes.
+connectors:
+  universal:
+    plugin: graphql
+    auth_mode: token_passthrough
+    timeout_seconds: 30
+
+    graphql:
+      endpoint: http://localhost:8005/graphql
+      # native = our generator (app/plugins/graphql); graphql_mcp = the
+      # graphql-mcp library (app/plugins/graphql_mcp) — results only 2 levels deep.
+      engine: native
+      schema_file: null
+      # Regexes on the root field name. Organization and Location, for now.
+      include:
+        - Organization
+        - Location
+      exclude:
+        # Legacy list variants — searchFhir* returns the same data plus
+        # total and paging.
+        - ^getFhir(Organizations|Locations)$
+      include_mutations: true
+      selection_depth: 5
